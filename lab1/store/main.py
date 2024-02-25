@@ -23,6 +23,36 @@ from config import (
     POSTGRES_USER,
     POSTGRES_PASSWORD,
 )
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
+
+# Session model
+class Base(DeclarativeBase):
+    pass
+class ProcessedAgentDataToPost(Base):
+    __tablename__ = 'processed_agent_data'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    road_state: Mapped[str] = mapped_column(String(255))
+    user_id: Mapped[int]
+    x: Mapped[float]
+    y: Mapped[float]
+    z: Mapped[float]
+    latitude: Mapped[float]
+    longitude: Mapped[float]
+    timestamp: Mapped[datetime]
+
+    def repr(self) -> str:
+        return str("Data(id="+str(self.id)+
+            ",road_state="+str(self.road_state)+
+            ",user_id="+str(self.user_id)+
+            ",x="+str(self.x)+
+            ",y="+str(self.y)+
+            ",z="+str(self.z)+
+            ",latitude="+str(self.latitude)+
+            ",longitude="+str(self.longitude)+
+            ",timestamp="+str(self.timestamp))
 
 # FastAPI app setup
 app = FastAPI()
@@ -123,12 +153,23 @@ async def send_data_to_subscribers(user_id: int, data):
 
 # FastAPI CRUDL endpoints
 
-
 @app.post("/processed_agent_data/")
 async def create_processed_agent_data(data: List[ProcessedAgentData]):
-    # Insert data to database
-    # Send data to subscribers
-    pass
+    with SessionLocal() as session:
+        currdata = ProcessedAgentDataToPost(
+                id = data[0].agent_data.user_id,
+                road_state = data[0].road_state,
+                user_id = 1,
+                x = 1.2,
+                y = 1.3,
+                z = 1.4,
+                latitude = 2.1,
+                longitude = 2.2,
+                timestamp = datetime.now()
+            )
+        session.add(currdata)
+        session.commit()
+
 
 
 @app.get(
@@ -140,10 +181,19 @@ def read_processed_agent_data(processed_agent_data_id: int):
     pass
 
 
-@app.get("/processed_agent_data/", response_model=list[ProcessedAgentDataInDB])
-def list_processed_agent_data():
-    # Get list of data
-    pass
+@app.get("/processed_agent_data/")
+async def get_processed_agent_data():
+    with SessionLocal() as session:
+        try:
+            # Query all processed agent data from the database
+            result = session.query(processed_agent_data).limit(100).all()
+            # processed_data = result.all()
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+# @app.get("/processed_agent_data/", response_model=ProcessedAgentDataInDB,)
+# def list_processed_agent_data(db: Session = Depends(get_db)):
+#    return db.query(ProcessedAgentDataInDB).all()
 
 
 @app.put(
