@@ -11,9 +11,11 @@ from sqlalchemy import (
     String,
     Float,
     DateTime,
+    select
 )
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import select
+from sqlalchemy.orm import registry
 from datetime import datetime
 from pydantic import BaseModel, field_validator
 from config import (
@@ -23,36 +25,6 @@ from config import (
     POSTGRES_USER,
     POSTGRES_PASSWORD,
 )
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.orm import Mapped
-from sqlalchemy.orm import mapped_column
-
-# Session model
-class Base(DeclarativeBase):
-    pass
-class ProcessedAgentDataToPost(Base):
-    __tablename__ = 'processed_agent_data'
-    id: Mapped[int] = mapped_column(primary_key=True)
-    road_state: Mapped[str] = mapped_column(String(255))
-    user_id: Mapped[int]
-    x: Mapped[float]
-    y: Mapped[float]
-    z: Mapped[float]
-    latitude: Mapped[float]
-    longitude: Mapped[float]
-    timestamp: Mapped[datetime]
-
-    def repr(self) -> str:
-        return str("Data(id="+str(self.id)+
-            ",road_state="+str(self.road_state)+
-            ",user_id="+str(self.user_id)+
-            ",x="+str(self.x)+
-            ",y="+str(self.y)+
-            ",z="+str(self.z)+
-            ",latitude="+str(self.latitude)+
-            ",longitude="+str(self.longitude)+
-            ",timestamp="+str(self.timestamp))
 
 # FastAPI app setup
 app = FastAPI()
@@ -74,6 +46,12 @@ processed_agent_data = Table(
     Column("longitude", Float),
     Column("timestamp", DateTime),
 )
+mapper_registry = registry()
+class ProcessedAgentDataToPost:
+    pass
+mapper_registry.map_imperatively(ProcessedAgentDataToPost, processed_agent_data)
+
+
 SessionLocal = sessionmaker(bind=engine)
 
 
@@ -126,6 +104,9 @@ class ProcessedAgentData(BaseModel):
     agent_data: AgentData
 
 
+
+
+
 # WebSocket subscriptions
 subscriptions: Dict[int, Set[WebSocket]] = {}
 
@@ -153,23 +134,24 @@ async def send_data_to_subscribers(user_id: int, data):
 
 # FastAPI CRUDL endpoints
 
+
 @app.post("/processed_agent_data/")
 async def create_processed_agent_data(data: List[ProcessedAgentData]):
-    with SessionLocal() as session:
-        currdata = ProcessedAgentDataToPost(
-                id = data[0].agent_data.user_id,
-                road_state = data[0].road_state,
-                user_id = 1,
-                x = 1.2,
-                y = 1.3,
-                z = 1.4,
-                latitude = 2.1,
-                longitude = 2.2,
-                timestamp = datetime.now()
-            )
-        session.add(currdata)
-        session.commit()
+    for data_inst in data:
+        with SessionLocal() as session:
+            currdata = ProcessedAgentDataToPost(
 
+                    road_state = data_inst.road_state,
+                    user_id = data_inst.agent_data.user_id,
+                    x = data_inst.agent_data.accelerometer.x,
+                    y = data_inst.agent_data.accelerometer.y,
+                    z = data_inst.agent_data.accelerometer.z,
+                    latitude = data_inst.agent_data.gps.latitude,
+                    longitude = data_inst.agent_data.gps.longitude,
+                    timestamp = data_inst.agent_data.timestamp
+                )
+            session.add(currdata)
+            session.commit()
 
 
 @app.get(
@@ -178,22 +160,20 @@ async def create_processed_agent_data(data: List[ProcessedAgentData]):
 )
 def read_processed_agent_data(processed_agent_data_id: int):
     # Get data by id
-    pass
-
-
-@app.get("/processed_agent_data/")
-async def get_processed_agent_data():
     with SessionLocal() as session:
-        try:
-            # Query all processed agent data from the database
-            result = session.query(processed_agent_data).limit(100).all()
-            # processed_data = result.all()
-            return result
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-# @app.get("/processed_agent_data/", response_model=ProcessedAgentDataInDB,)
-# def list_processed_agent_data(db: Session = Depends(get_db)):
-#    return db.query(ProcessedAgentDataInDB).all()
+        RecievedAgentData = session.get(ProcessedAgentDataToPost, processed_agent_data_id)
+        return RecievedAgentData
+
+    
+
+
+@app.get("/processed_agent_data/", response_model=list[ProcessedAgentDataInDB])
+def list_processed_agent_data():
+    # Get list of data
+    with SessionLocal() as session:
+        statement = select(ProcessedAgentDataToPost)
+        RecievedAgentData = session.scalars(statement).all()
+        return RecievedAgentData
 
 
 @app.put(
@@ -202,7 +182,20 @@ async def get_processed_agent_data():
 )
 def update_processed_agent_data(processed_agent_data_id: int, data: ProcessedAgentData):
     # Update data
-    pass
+    with SessionLocal() as session:
+        RecievedAgentData = session.execute(select(ProcessedAgentDataToPost).filter_by(id=processed_agent_data_id)).scalar_one()
+        RecievedAgentData.road_state = data.road_state
+        RecievedAgentData.user_id = data.agent_data.user_id
+        RecievedAgentData.x = data.agent_data.accelerometer.x
+        RecievedAgentData.y = data.agent_data.accelerometer.y
+        RecievedAgentData.z = data.agent_data.accelerometer.z
+        RecievedAgentData.latitude = data.agent_data.gps.latitude
+        RecievedAgentData.longitude = data.agent_data.gps.longitude
+        RecievedAgentData.timestamp = data.agent_data.timestamp
+        session.commit()
+        RecievedAgentData = session.execute(select(ProcessedAgentDataToPost).filter_by(id=processed_agent_data_id)).scalar_one()
+        return RecievedAgentData
+        
 
 
 @app.delete(
@@ -211,7 +204,11 @@ def update_processed_agent_data(processed_agent_data_id: int, data: ProcessedAge
 )
 def delete_processed_agent_data(processed_agent_data_id: int):
     # Delete by id
-    pass
+    with SessionLocal() as session:
+        RecievedAgentData = session.execute(select(ProcessedAgentDataToPost).filter_by(id=processed_agent_data_id)).scalar_one()
+        session.delete(RecievedAgentData)
+        session.commit()
+        return RecievedAgentData
 
 
 if __name__ == "__main__":
