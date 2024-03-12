@@ -1,7 +1,7 @@
 # set base image (host OS)
 FROM python:latest
 # set the working directory in the container
-WORKDIR /lab1/agent
+WORKDIR /usr/agent
 # copy the dependencies file to the working directory
 COPY requirements.txt .
 # install dependencies
