@@ -7,16 +7,21 @@ class AccelerometerData(BaseModel):
     y: float
     z: float
 
-
 class GpsData(BaseModel):
     latitude: float
     longitude: float
 
+class ParkingData(BaseModel):
+    empty_count: float
+    latitude: float
+    longitude: float
 
 class AgentData(BaseModel):
     accelerometer: AccelerometerData
     gps: GpsData
+    parking: ParkingData
     timestamp: datetime
+    user_id: int
 
     @classmethod
     @field_validator("timestamp", mode="before")

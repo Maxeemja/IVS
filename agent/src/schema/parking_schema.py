@@ -3,4 +3,5 @@ from marshmallow import Schema, fields
 
 class ParkingSchema(Schema):
     empty_count = fields.Number()
-    gps = fields.Nested(GpsSchema)
+    longitude = fields.Number()
+    latitude = fields.Number()
